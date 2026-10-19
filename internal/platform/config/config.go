@@ -22,6 +22,9 @@ type Config struct {
 	OTLPEndpoint    string        `env:"OTLP_ENDPOINT"`
 	OTLPInsecure    bool          `env:"OTLP_INSECURE" envDefault:"false"`
 	ServiceName     string        `env:"SERVICE_NAME" envDefault:"go-template"`
+	JWTPrivateKey   string        `env:"JWT_PRIVATE_KEY_BASE64"`
+	JWTIssuer       string        `env:"JWT_ISSUER" envDefault:"go-template"`
+	JWTAudience     string        `env:"JWT_AUDIENCE" envDefault:"go-template-api"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"15s"`
 	ReadyTimeout    time.Duration `env:"READY_TIMEOUT" envDefault:"2s"`
 }

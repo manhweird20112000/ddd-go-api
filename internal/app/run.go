@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/yourorg/go-template/internal/modules/identity"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
 	"github.com/yourorg/go-template/internal/platform/httpx"
@@ -30,6 +31,10 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
+	identityModule, err := identity.New(pool, cfg)
+	if err != nil {
+		return err
+	}
 
 	var cache *redis.Client
 	if cfg.RedisURL != "" {
@@ -73,7 +78,9 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return nil
 	}
 	propagators := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
-	handler := otelhttp.NewHandler(httpx.NewRouter(readiness, logger), "http.server",
+	router := httpx.NewRouter(readiness, logger)
+	identityModule.RegisterRoutes(router)
+	handler := otelhttp.NewHandler(router, "http.server",
 		otelhttp.WithTracerProvider(traceProvider),
 		otelhttp.WithMeterProvider(meterProvider),
 		otelhttp.WithPropagators(propagators))

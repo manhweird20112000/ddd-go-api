@@ -19,14 +19,16 @@
 - `make up` built and started PostgreSQL, Redis, OTel collector, and API. `/healthz`, `/readyz`, and `/metrics` each returned HTTP 200.
 - Worker, migration, sqlc, proto, arch-check, and module generator targets are defined; their implementations follow the phases that introduce the corresponding module or transport.
 
-## Phase 2 — next
+## Phase 2 — complete
 
-- Implement the identity domain, application, HTTP and PostgreSQL adapters, migrations, password hashing, and token flow.
-- Wire `/v1` identity routes into the API composition root and verify register, login, and me with curl.
+- Implemented identity domain and application ports for registration, login, refresh rotation with family revocation on reuse, current-user lookup, and cursor pagination.
+- Added HTTP, PostgreSQL/sqlc, Argon2id, and Ed25519 JWT adapters. Identity owns its schema and migration history.
+- `make fmt lint test build` passed on 2026-10-19; golangci-lint reported 0 issues. A Testcontainers integration test passed against PostgreSQL 16, covering migration, reads, uniqueness, and list projection.
+- `docker compose up --build -d` completed migration before starting API. HTTP smoke confirmed registration, login, current-user lookup, paginated list, and refresh rotation.
 
 ## Phases 3–8 — pending
 
-- Phase 3: transactional outbox, in-process event bus, and relay.
+- Phase 3: transactional outbox, in-process event bus, and relay (next).
 - Phase 4: notification consumer and idempotent database effect.
 - Phase 5: identity contract, in-process adapter, and architecture enforcement.
 - Phase 6: gRPC, JetStream, registry, and distributed smoke test.

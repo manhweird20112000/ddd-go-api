@@ -1,7 +1,7 @@
-.PHONY: help fmt lint test test-race build run worker migrate-up migrate-down sqlc proto arch-check up down new-module
+.PHONY: help fmt lint test test-integration test-race build run worker migrate-up migrate-down sqlc proto arch-check up down new-module
 
 help:
-	@echo "Targets: fmt lint test test-race build run worker migrate-up migrate-down sqlc proto arch-check up down new-module"
+	@echo "Targets: fmt lint test test-integration test-race build run worker migrate-up migrate-down sqlc proto arch-check up down new-module"
 
 fmt:
 	go fmt ./...
@@ -11,6 +11,9 @@ lint:
 
 test:
 	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
 
 test-race:
 ifeq ($(OS),Windows_NT)
@@ -36,7 +39,6 @@ migrate-down:
 
 sqlc:
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate -f internal/modules/identity/sqlc.yaml
-	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate -f internal/modules/notification/sqlc.yaml
 
 proto:
 	buf generate api/proto
