@@ -39,6 +39,7 @@ migrate-down:
 
 sqlc:
 	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate -f internal/modules/identity/sqlc.yaml
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate -f internal/modules/notification/sqlc.yaml
 
 proto:
 	buf generate api/proto

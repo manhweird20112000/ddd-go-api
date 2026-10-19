@@ -33,9 +33,15 @@
 - `make test-integration` passed against PostgreSQL 16, including rollback when outbox insert fails, two concurrent relays publishing each of twenty events once, and dead transition. Compose migration completed and registration created one pending event.
 - `make fmt lint test build` passed on 2026-10-19 with zero lint issues.
 
-## Phases 4–8 — pending
+## Phase 4 — complete
 
-- Phase 4: notification consumer and idempotent database effect.
+- Added Notification domain, application, Postgres/sqlc and in-process adapters, a logging Sender, and module-owned migrations for `processed_events`, `welcome_deliveries`, and outbox.
+- The consumer inserts its processed marker and delivery in one transaction. Duplicate source events are acknowledged without another delivery. A sender failure rolls back the transaction for retry.
+- `make test-integration` passed with duplicate delivery and two concurrent relays. Compose with two worker containers processed a registration, then the same event was forced to redeliver; its outbox returned to `published` and only one processed marker and welcome row existed.
+- `make fmt lint test build` passed on 2026-10-19 with zero lint issues.
+
+## Phases 5–8 — pending
+
 - Phase 5: identity contract, in-process adapter, and architecture enforcement.
 - Phase 6: gRPC, JetStream, registry, and distributed smoke test.
 - Phase 7: HTTP hardening, separate database roles, and cleanup jobs.

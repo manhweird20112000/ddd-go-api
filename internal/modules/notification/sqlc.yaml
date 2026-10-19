@@ -1,0 +1,11 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations/000001_notification.up.sql
+    queries: queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: adapter/postgres/sqlcgen
+        sql_package: pgx/v5
+        emit_interface: true

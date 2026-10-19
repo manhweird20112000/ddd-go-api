@@ -24,6 +24,14 @@ func RequestID(ctx context.Context) string {
 	return id
 }
 
+// WithRequestID carries an accepted request ID into asynchronous processing.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	if !validRequestID(id) {
+		return ctx
+	}
+	return context.WithValue(ctx, requestIDKey{}, id)
+}
+
 // NewRouter serves process-level health routes with request IDs.
 func NewRouter(readiness func(context.Context) error, logs ...*slog.Logger) chi.Router {
 	r := chi.NewRouter()

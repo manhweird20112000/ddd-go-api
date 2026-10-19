@@ -65,5 +65,15 @@ services:
       otel-collector:
         condition: service_started
 
+  worker:
+    profiles: [worker]
+    image: go-template:dev
+    entrypoint: ["/worker"]
+    environment:
+      DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
