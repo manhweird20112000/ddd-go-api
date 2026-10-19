@@ -45,3 +45,13 @@ WHERE id = $1;
 UPDATE identity.refresh_tokens
 SET revoked_at = now()
 WHERE family_id = $1 AND revoked_at IS NULL;
+
+-- name: InsertOutboxEvent :exec
+INSERT INTO identity.outbox (
+    id, event_type, version, aggregate_id, occurred_at,
+    request_id, trace_id, traceparent, payload
+) VALUES (
+    sqlc.arg(id), sqlc.arg(event_type), sqlc.arg(version), sqlc.arg(aggregate_id),
+    sqlc.arg(occurred_at), sqlc.arg(request_id), sqlc.arg(trace_id),
+    sqlc.arg(traceparent), sqlc.arg(payload)
+);

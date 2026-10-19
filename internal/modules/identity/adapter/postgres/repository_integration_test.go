@@ -14,9 +14,22 @@ import (
 	pgcontainer "github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/yourorg/go-template/internal/modules/identity/adapter/postgres"
+	identityapp "github.com/yourorg/go-template/internal/modules/identity/app"
 	"github.com/yourorg/go-template/internal/modules/identity/domain"
 	"github.com/yourorg/go-template/internal/modules/identity/migrations"
+	"github.com/yourorg/go-template/internal/platform/db"
 )
+
+type integrationHasher struct{}
+
+func (integrationHasher) Hash(context.Context, string) (string, error)         { return "test-hash", nil }
+func (integrationHasher) Verify(context.Context, string, string) (bool, error) { return true, nil }
+
+type integrationTokens struct{}
+
+func (integrationTokens) Issue(context.Context, string) (string, int64, error) {
+	return "test-access", 900, nil
+}
 
 func TestRepositoryWithPostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -54,4 +67,16 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	require.Len(t, users, 1)
 	require.Equal(t, first.ID, users[0].ID)
 	require.Empty(t, users[0].PasswordHash)
+	service := identityapp.NewService(repo, repo, db.NewTxManager(pool), integrationHasher{}, integrationTokens{}, repo)
+	_, err = service.Register(ctx, "second@example.test", "strong-test-passphrase")
+	require.NoError(t, err)
+	var events int
+	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM identity.outbox").Scan(&events))
+	require.Equal(t, 1, events)
+	_, err = pool.Exec(ctx, "DROP TABLE identity.outbox")
+	require.NoError(t, err)
+	_, err = service.Register(ctx, "rolled-back@example.test", "strong-test-passphrase")
+	require.Error(t, err)
+	_, err = repo.ByEmail(ctx, "rolled-back@example.test")
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }

@@ -15,6 +15,7 @@ type Querier interface {
 	FindUserByEmail(ctx context.Context, email string) (IdentityUser, error)
 	GetRefreshTokenForUpdate(ctx context.Context, tokenHash []byte) (IdentityRefreshToken, error)
 	GetUser(ctx context.Context, id pgtype.UUID) (IdentityUser, error)
+	InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) error
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) error
 	ListFirstUsers(ctx context.Context, limit int32) ([]ListFirstUsersRow, error)
 	ListUsersAfter(ctx context.Context, arg ListUsersAfterParams) ([]ListUsersAfterRow, error)

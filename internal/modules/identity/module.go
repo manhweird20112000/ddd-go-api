@@ -33,7 +33,7 @@ func New(pool *pgxpool.Pool, cfg config.Config) (*Module, error) {
 		return nil, fmt.Errorf("identity verifier: %w", err)
 	}
 	repository := postgres.New(pool)
-	service := identityapp.NewService(repository, repository, db.NewTxManager(pool), argon2id.New(), issuer)
+	service := identityapp.NewService(repository, repository, db.NewTxManager(pool), argon2id.New(), issuer, repository)
 	return &Module{service: service, verifier: verifier}, nil
 }
 

@@ -97,6 +97,44 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (IdentityUser, er
 	return i, err
 }
 
+const insertOutboxEvent = `-- name: InsertOutboxEvent :exec
+INSERT INTO identity.outbox (
+    id, event_type, version, aggregate_id, occurred_at,
+    request_id, trace_id, traceparent, payload
+) VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9
+)
+`
+
+type InsertOutboxEventParams struct {
+	ID          pgtype.UUID
+	EventType   string
+	Version     int32
+	AggregateID pgtype.UUID
+	OccurredAt  pgtype.Timestamptz
+	RequestID   string
+	TraceID     string
+	Traceparent string
+	Payload     []byte
+}
+
+func (q *Queries) InsertOutboxEvent(ctx context.Context, arg InsertOutboxEventParams) error {
+	_, err := q.db.Exec(ctx, insertOutboxEvent,
+		arg.ID,
+		arg.EventType,
+		arg.Version,
+		arg.AggregateID,
+		arg.OccurredAt,
+		arg.RequestID,
+		arg.TraceID,
+		arg.Traceparent,
+		arg.Payload,
+	)
+	return err
+}
+
 const insertRefreshToken = `-- name: InsertRefreshToken :exec
 INSERT INTO identity.refresh_tokens (id, user_id, family_id, token_hash, expires_at)
 VALUES ($1, $2, $3, $4, $5)

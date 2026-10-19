@@ -67,21 +67,29 @@ func (fakeAccessTokens) Issue(context.Context, string) (string, int64, error) {
 	return "signed-access-token", 900, nil
 }
 
+type fakeEvents struct{ userID string }
+
+func (f *fakeEvents) RecordUserRegistered(_ context.Context, userID string) error {
+	f.userID = userID
+	return nil
+}
+
 func TestRegisterNormalizesAndHashes(t *testing.T) {
 	users := &fakeUsers{}
-	service := NewService(users, &fakeSessions{}, fakeUnitOfWork{}, fakeHasher{}, fakeAccessTokens{})
+	events := &fakeEvents{}
+	service := NewService(users, &fakeSessions{}, fakeUnitOfWork{}, fakeHasher{}, fakeAccessTokens{}, events)
 	user, err := service.Register(context.Background(), " Alice@Example.COM ", "correct-password")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.Email != "alice@example.com" || users.created.PasswordHash != "stored-hash" || user.ID == "" {
+	if user.Email != "alice@example.com" || users.created.PasswordHash != "stored-hash" || user.ID == "" || events.userID != user.ID {
 		t.Fatalf("unexpected registered user: %+v", user)
 	}
 }
 
 func TestLoginRejectsWrongPassword(t *testing.T) {
 	users := &fakeUsers{lookup: domain.User{ID: "8f7e8db2-c925-4fce-889b-1901c90210bb", Email: "a@example.com", PasswordHash: "stored-hash"}}
-	service := NewService(users, &fakeSessions{}, fakeUnitOfWork{}, fakeHasher{}, fakeAccessTokens{})
+	service := NewService(users, &fakeSessions{}, fakeUnitOfWork{}, fakeHasher{}, fakeAccessTokens{}, &fakeEvents{})
 	_, err := service.Login(context.Background(), "a@example.com", "wrong-password")
 	if !errors.Is(err, domain.ErrUnauthorized) {
 		t.Fatalf("expected unauthorized, got %v", err)
@@ -96,7 +104,7 @@ func TestRefreshReuseRevokesFamily(t *testing.T) {
 		FamilyID: "8f7e8db2-c925-4fce-889b-1901c90210bb", Hash: hash[:],
 		ExpiresAt: time.Now().Add(time.Hour), UsedAt: &used,
 	}}
-	service := NewService(&fakeUsers{}, sessions, fakeUnitOfWork{}, fakeHasher{}, fakeAccessTokens{})
+	service := NewService(&fakeUsers{}, sessions, fakeUnitOfWork{}, fakeHasher{}, fakeAccessTokens{}, &fakeEvents{})
 	_, err := service.Refresh(context.Background(), "old-raw-token")
 	if !errors.Is(err, domain.ErrUnauthorized) || !sessions.revoked {
 		t.Fatalf("expected family revocation and unauthorized, got revoked=%v error=%v", sessions.revoked, err)

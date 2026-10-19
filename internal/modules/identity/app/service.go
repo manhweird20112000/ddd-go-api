@@ -53,6 +53,11 @@ type AccessTokens interface {
 	Issue(context.Context, string) (string, int64, error)
 }
 
+// EventWriter records identity domain events in the current transaction.
+type EventWriter interface {
+	RecordUserRegistered(context.Context, string) error
+}
+
 // TokenPair is returned after login and refresh rotation.
 type TokenPair struct {
 	AccessToken  string
@@ -67,11 +72,12 @@ type Service struct {
 	tx       UnitOfWork
 	hasher   Hasher
 	tokens   AccessTokens
+	events   EventWriter
 }
 
 // NewService builds identity use cases from injected ports.
-func NewService(users UserRepository, sessions SessionRepository, tx UnitOfWork, hasher Hasher, tokens AccessTokens) *Service {
-	return &Service{users: users, sessions: sessions, tx: tx, hasher: hasher, tokens: tokens}
+func NewService(users UserRepository, sessions SessionRepository, tx UnitOfWork, hasher Hasher, tokens AccessTokens, events EventWriter) *Service {
+	return &Service{users: users, sessions: sessions, tx: tx, hasher: hasher, tokens: tokens, events: events}
 }
 
 // Register creates a user in one transaction after validating and hashing input.
@@ -95,7 +101,10 @@ func (s *Service) Register(ctx context.Context, rawEmail, password string) (doma
 	err = s.tx.WithinTx(ctx, func(txCtx context.Context) error {
 		var createErr error
 		created, createErr = s.users.Create(txCtx, domain.User{ID: id, Email: email, PasswordHash: hash})
-		return createErr
+		if createErr != nil {
+			return createErr
+		}
+		return s.events.RecordUserRegistered(txCtx, created.ID)
 	})
 	if err != nil {
 		return domain.User{}, fmt.Errorf("register user: %w", err)

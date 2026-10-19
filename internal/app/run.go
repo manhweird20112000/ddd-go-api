@@ -17,8 +17,10 @@ import (
 	"github.com/yourorg/go-template/internal/modules/identity"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
+	"github.com/yourorg/go-template/internal/platform/eventbus"
 	"github.com/yourorg/go-template/internal/platform/httpx"
 	"github.com/yourorg/go-template/internal/platform/metrics"
+	"github.com/yourorg/go-template/internal/platform/outbox"
 	"github.com/yourorg/go-template/internal/platform/tracing"
 )
 
@@ -80,6 +82,11 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	propagators := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	router := httpx.NewRouter(readiness, logger)
 	identityModule.RegisterRoutes(router)
+	bus := eventbus.NewInProcess()
+	relay, err := outbox.NewRelay(pool, "identity", bus, logger)
+	if err != nil {
+		return err
+	}
 	handler := otelhttp.NewHandler(router, "http.server",
 		otelhttp.WithTracerProvider(traceProvider),
 		otelhttp.WithMeterProvider(meterProvider),
@@ -98,6 +105,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	group, runCtx := errgroup.WithContext(ctx)
+	group.Go(func() error { return relay.Run(runCtx) })
 	group.Go(func() error { return serve(httpServer) })
 	group.Go(func() error { return serve(metricsServer) })
 	group.Go(func() error {

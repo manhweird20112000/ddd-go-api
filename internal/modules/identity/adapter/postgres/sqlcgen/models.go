@@ -8,6 +8,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IdentityOutbox struct {
+	ID            pgtype.UUID
+	EventType     string
+	Version       int32
+	AggregateID   pgtype.UUID
+	OccurredAt    pgtype.Timestamptz
+	RequestID     string
+	TraceID       string
+	Traceparent   string
+	Payload       []byte
+	Status        string
+	Attempts      int32
+	NextAttemptAt pgtype.Timestamptz
+	PublishedAt   pgtype.Timestamptz
+	LastError     string
+}
+
 type IdentityRefreshToken struct {
 	ID        pgtype.UUID
 	UserID    pgtype.UUID

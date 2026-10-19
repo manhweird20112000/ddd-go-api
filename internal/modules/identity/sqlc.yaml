@@ -1,7 +1,9 @@
 version: "2"
 sql:
   - engine: postgresql
-    schema: migrations/000001_identity.up.sql
+    schema:
+      - migrations/000001_identity.up.sql
+      - migrations/000002_outbox.up.sql
     queries: queries.sql
     gen:
       go:

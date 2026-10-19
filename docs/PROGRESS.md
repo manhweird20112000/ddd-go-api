@@ -26,9 +26,15 @@
 - `make fmt lint test build` passed on 2026-10-19; golangci-lint reported 0 issues. A Testcontainers integration test passed against PostgreSQL 16, covering migration, reads, uniqueness, and list projection.
 - `docker compose up --build -d` completed migration before starting API. HTTP smoke confirmed registration, login, current-user lookup, paginated list, and refresh rotation.
 
-## Phases 3–8 — pending
+## Phase 3 — complete
 
-- Phase 3: transactional outbox, in-process event bus, and relay (next).
+- Identity registration now inserts `UserRegisteredV1` into `identity.outbox` in the same database transaction as the user. The payload carries only `user_id`.
+- Added a typed event envelope, in-process bus, worker entrypoint, `SKIP LOCKED` relay, bounded retries, and dead status after ten failures. An event without a subscriber stays pending until a consumer is installed.
+- `make test-integration` passed against PostgreSQL 16, including rollback when outbox insert fails, two concurrent relays publishing each of twenty events once, and dead transition. Compose migration completed and registration created one pending event.
+- `make fmt lint test build` passed on 2026-10-19 with zero lint issues.
+
+## Phases 4–8 — pending
+
 - Phase 4: notification consumer and idempotent database effect.
 - Phase 5: identity contract, in-process adapter, and architecture enforcement.
 - Phase 6: gRPC, JetStream, registry, and distributed smoke test.
