@@ -1,0 +1,6 @@
+.env
+.superpowers/
+.worktrees/
+bin/
+coverage.out
+*.test
