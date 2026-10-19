@@ -10,16 +10,22 @@
 - The root `compose.yaml` will support the required `docker compose up` command.
 - The Phase 0 quality gate is design approval because no Makefile or code existed before Phase 1.
 
-## Phase 1 — in progress
+## Phase 1 — complete
 
-- Initialize the Go module and core tooling.
-- Implement validated configuration, JSON logging, observability, DB pool and transaction manager, basic HTTP server, error mapping, request IDs, and health endpoints.
-- Provide local Compose dependencies and a CI skeleton.
-- Run `make fmt lint test build` and verify health/readiness before marking this phase complete.
+- Initialized `github.com/yourorg/go-template` with Go 1.26.3, developer commands, lint configuration, environment example, and a CI skeleton.
+- Implemented validated configuration, JSON logging, OTLP tracing and metrics, Prometheus scraping, pgx pool and transaction transport, request IDs, error envelope, and liveness/readiness routes.
+- `make fmt lint test build` passed on 2026-10-19; golangci-lint reported 0 issues.
+- `make test-race` passed in the Go Linux container; Windows has no local C compiler, so that target uses Docker locally and runs natively in Linux CI.
+- `make up` built and started PostgreSQL, Redis, OTel collector, and API. `/healthz`, `/readyz`, and `/metrics` each returned HTTP 200.
+- Worker, migration, sqlc, proto, arch-check, and module generator targets are defined; their implementations follow the phases that introduce the corresponding module or transport.
 
-## Phases 2–8 — pending
+## Phase 2 — next
 
-- Phase 2: identity HTTP and Postgres flow.
+- Implement the identity domain, application, HTTP and PostgreSQL adapters, migrations, password hashing, and token flow.
+- Wire `/v1` identity routes into the API composition root and verify register, login, and me with curl.
+
+## Phases 3–8 — pending
+
 - Phase 3: transactional outbox, in-process event bus, and relay.
 - Phase 4: notification consumer and idempotent database effect.
 - Phase 5: identity contract, in-process adapter, and architecture enforcement.
@@ -31,4 +37,4 @@
 
 - The repository started empty and without Git; Git was initialized for the phase commits.
 - `make`, `docker`, `git`, and `buf` are installed. `golangci-lint`, `sqlc`, and `govulncheck` are not currently on PATH.
-- Docker Engine is not accessible from the current sandbox. This must be resolved before the Compose acceptance checks can run.
+- Docker Engine requires elevated tool execution in this environment; the Phase 1 Compose acceptance checks passed with that access.

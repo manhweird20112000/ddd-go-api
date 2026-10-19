@@ -1,0 +1,7 @@
+.git
+.agents
+.env
+.superpowers
+*.exe
+bin
+coverage.out
