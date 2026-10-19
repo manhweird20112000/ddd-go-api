@@ -44,7 +44,7 @@ func NewNATS(ctx context.Context, url string, logger *slog.Logger) (*NATS, error
 	}
 	if _, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
 		Name: streamName, Subjects: []string{"events.>", "dead.>"},
-		Storage: jetstream.FileStorage, Duplicates: 2 * time.Minute,
+		Storage: jetstream.FileStorage, Duplicates: 2 * time.Minute, MaxAge: 30 * 24 * time.Hour,
 	}); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("ensure JetStream event stream: %w", err)

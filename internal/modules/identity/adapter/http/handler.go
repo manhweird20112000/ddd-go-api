@@ -63,12 +63,20 @@ type cursorValue struct {
 }
 
 // RegisterRoutes mounts identity HTTP routes under /v1.
-func RegisterRoutes(router chi.Router, service Service, verifier *auth.Verifier) {
+func RegisterRoutes(router chi.Router, service Service, verifier *auth.Verifier,
+	idempotency *httpx.Idempotency, rateLimit func(http.Handler) http.Handler) {
 	h := &handler{service: service, validate: validator.New()}
 	router.Route("/v1", func(r chi.Router) {
-		r.Post("/users/register", h.register)
-		r.Post("/auth/login", h.login)
-		r.Post("/auth/refresh", h.refresh)
+		writes := r
+		if rateLimit != nil {
+			writes = writes.With(rateLimit)
+		}
+		if idempotency != nil {
+			writes = writes.With(idempotency.Middleware)
+		}
+		writes.Post("/users/register", h.register)
+		writes.Post("/auth/login", h.login)
+		writes.Post("/auth/refresh", h.refresh)
 		r.With(auth.Require(verifier)).Get("/users/me", h.me)
 		r.With(auth.Require(verifier)).Get("/users", h.list)
 	})
@@ -173,11 +181,21 @@ func (h *handler) decodeAndValidate(w http.ResponseWriter, r *http.Request, valu
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "body_too_large", "request body is too large")
+			return false
+		}
 		httpx.WriteError(w, r, http.StatusBadRequest, "validation", "invalid JSON body")
 		return false
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			httpx.WriteError(w, r, http.StatusRequestEntityTooLarge, "body_too_large", "request body is too large")
+			return false
+		}
 		httpx.WriteError(w, r, http.StatusBadRequest, "validation", "request body must contain one JSON object")
 		return false
 	}

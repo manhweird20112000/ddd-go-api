@@ -31,6 +31,19 @@ services:
     volumes:
       - ./deploy/otel-collector.yaml:/etc/otel-collector.yaml:ro
 
+  db-roles:
+    image: postgres:16
+    entrypoint: ["sh", "/bootstrap/roles.sh"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}
+    volumes:
+      - ./deploy/postgres/roles.sh:/bootstrap/roles.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   migrate:
     build:
       context: .
@@ -40,18 +53,22 @@ services:
     environment:
       DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-roles:
+        condition: service_completed_successfully
 
   api:
     image: go-template:dev
     environment:
       DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      IDENTITY_DATABASE_URL: postgres://identity_app:${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      NOTIFICATION_DATABASE_URL: postgres://notification_app:${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}@postgres:5432/template?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       OTLP_ENDPOINT: otel-collector:4317
       OTLP_INSECURE: "true"
       SERVICE_NAME: go-template
       JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64:?set JWT_PRIVATE_KEY_BASE64 in .env}
+      IDEMPOTENCY_KEY_BASE64: ${IDEMPOTENCY_KEY_BASE64:?set IDEMPOTENCY_KEY_BASE64 in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       JWT_ISSUER: go-template
       JWT_AUDIENCE: go-template-api
     ports:
@@ -71,6 +88,8 @@ services:
     entrypoint: ["/worker"]
     environment:
       DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      IDENTITY_DATABASE_URL: postgres://identity_app:${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      NOTIFICATION_DATABASE_URL: postgres://notification_app:${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}@postgres:5432/template?sslmode=disable
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -92,11 +111,14 @@ services:
     image: go-template:dev
     environment:
       DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      IDENTITY_DATABASE_URL: postgres://identity_app:${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env}@postgres:5432/template?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       OTLP_ENDPOINT: otel-collector:4317
       OTLP_INSECURE: "true"
       SERVICE_NAME: identity-api
       JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64:?set JWT_PRIVATE_KEY_BASE64 in .env}
+      IDEMPOTENCY_KEY_BASE64: ${IDEMPOTENCY_KEY_BASE64:?set IDEMPOTENCY_KEY_BASE64 in .env}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       ENABLED_MODULES: identity
       EVENT_BUS: nats
       NATS_URL: nats://nats:4222
@@ -116,6 +138,7 @@ services:
     entrypoint: ["/worker"]
     environment:
       DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      NOTIFICATION_DATABASE_URL: postgres://notification_app:${NOTIFICATION_DB_PASSWORD:?set NOTIFICATION_DB_PASSWORD in .env}@postgres:5432/template?sslmode=disable
       ENABLED_MODULES: notification
       EVENT_BUS: nats
       NATS_URL: nats://nats:4222

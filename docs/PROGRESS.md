@@ -56,10 +56,17 @@
 - `make fmt lint test build`, `make arch-check`, `buf lint`, and `make proto` passed on 2026-10-19.
 - Compose profiles include unprofiled base services by design; a pure distributed run uses `docker compose --profile distributed up --build -d --scale api=0`.
 
-## Phases 7–8 — pending
+## Phase 7 — complete
 
-- Phase 7: HTTP hardening, separate database roles, and cleanup jobs.
-- Phase 8: scaffolder, complete CI, ADRs, and operational documentation.
+- Identity writes require `Idempotency-Key`. PostgreSQL stores a request HMAC and AES-GCM encrypted response in the same transaction as the write for 24 hours. Integration tests cover replay, changed payloads, concurrent duplicates, and rollback on a 5xx response.
+- Redis enforces 20 writes per minute per client IP and route across replicas; Redis failure rejects writes. HTTP adds a 1 MiB body cap, security headers, and exact-origin CORS from environment configuration.
+- Identity and Notification open separate runtime PostgreSQL pools. Compose creates `identity_app` and `notification_app` roles, grants each only its own schema, and runs admin migrations separately. A privilege query returned `t|f|t|f` for own and cross-module table reads.
+- Bounded hourly cleanup removes expired idempotency keys, published outbox rows after 45 days, dead outbox rows after 90 days, and processed event markers after 45 days. JetStream retains events for 30 days. Shutdown drains servers and consumers before a final relay flush.
+- `make fmt lint test build` and `make test-integration` passed on 2026-10-19 with zero lint issues. Distributed Compose returned 201 for registration and identical replay, 409 for a changed payload, and 429 after 20 login requests. Monolith Compose registration produced one Notification delivery.
+
+## Phase 8 — pending
+
+- Scaffolder, complete CI, ADRs, and operational documentation.
 
 ## Environment findings
 

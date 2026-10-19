@@ -4,6 +4,7 @@ sql:
     schema:
       - migrations/000001_identity.up.sql
       - migrations/000002_outbox.up.sql
+      - migrations/000003_idempotency.up.sql
     queries: queries.sql
     gen:
       go:

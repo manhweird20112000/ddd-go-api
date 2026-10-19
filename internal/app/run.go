@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -35,14 +36,25 @@ import (
 func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	startupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	pool, err := db.Open(startupCtx, cfg.DatabaseURL)
-	if err != nil {
-		return err
+	var identityPool, notificationPool *pgxpool.Pool
+	var err error
+	if cfg.HasModule("identity") {
+		identityPool, err = db.Open(startupCtx, cfg.ModuleDatabaseURL("identity"))
+		if err != nil {
+			return fmt.Errorf("open identity database: %w", err)
+		}
+		defer identityPool.Close()
 	}
-	defer pool.Close()
+	if cfg.HasModule("notification") {
+		notificationPool, err = db.Open(startupCtx, cfg.ModuleDatabaseURL("notification"))
+		if err != nil {
+			return fmt.Errorf("open notification database: %w", err)
+		}
+		defer notificationPool.Close()
+	}
 	var identityModule *identity.Module
 	if cfg.HasModule("identity") {
-		identityModule, err = identity.New(pool, cfg)
+		identityModule, err = identity.New(identityPool, cfg)
 		if err != nil {
 			return err
 		}
@@ -63,6 +75,9 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		if err := cache.Ping(startupCtx).Err(); err != nil {
 			return fmt.Errorf("ping Redis: %w", err)
 		}
+	}
+	if identityModule != nil && cache == nil {
+		return errors.New("identity API requires REDIS_URL for rate limiting")
 	}
 
 	traceProvider, err := tracing.New(startupCtx, cfg.OTLPEndpoint, cfg.ServiceName, cfg.OTLPInsecure)
@@ -102,7 +117,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		if closer != nil {
 			defer func() { _ = closer.Close() }()
 		}
-		notificationModule = notification.New(pool, logger, identityService)
+		notificationModule = notification.New(notificationPool, logger, identityService)
 		if localBus != nil {
 			if err := notificationModule.Subscribe(localBus); err != nil {
 				return fmt.Errorf("subscribe notification: %w", err)
@@ -111,7 +126,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	var relay *outbox.Relay
 	if identityModule != nil {
-		relay, err = outbox.NewRelay(pool, "identity", publisher, logger)
+		relay, err = outbox.NewRelay(identityPool, "identity", publisher, logger)
 		if err != nil {
 			return err
 		}
@@ -120,8 +135,12 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	readiness := func(ctx context.Context) error {
 		checkCtx, checkCancel := context.WithTimeout(ctx, cfg.ReadyTimeout)
 		defer checkCancel()
-		if err := pool.Ping(checkCtx); err != nil {
-			return fmt.Errorf("database readiness: %w", err)
+		for name, pool := range map[string]*pgxpool.Pool{"identity": identityPool, "notification": notificationPool} {
+			if pool != nil {
+				if err := pool.Ping(checkCtx); err != nil {
+					return fmt.Errorf("%s database readiness: %w", name, err)
+				}
+			}
 		}
 		if cache != nil {
 			if err := cache.Ping(checkCtx).Err(); err != nil {
@@ -138,9 +157,9 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	propagators := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	router := httpx.NewRouter(readiness, logger)
 	if identityModule != nil {
-		identityModule.RegisterRoutes(router)
+		identityModule.RegisterRoutes(router, httpx.RateLimit(cache, 20))
 	}
-	handler := otelhttp.NewHandler(router, "http.server",
+	handler := otelhttp.NewHandler(httpx.Security(cfg.CORSAllowedOrigins)(router), "http.server",
 		otelhttp.WithTracerProvider(traceProvider),
 		otelhttp.WithMeterProvider(meterProvider),
 		otelhttp.WithPropagators(propagators))
@@ -169,6 +188,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	group, runCtx := errgroup.WithContext(ctx)
+	group.Go(func() error { return db.RunCleanup(runCtx, identityPool, notificationPool, logger) })
 	if relay != nil {
 		group.Go(func() error { return relay.Run(runCtx) })
 	}
@@ -207,7 +227,15 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	})
 	logger.InfoContext(ctx, "api_started", "http_addr", cfg.HTTPAddr,
 		"grpc_addr", cfg.GRPCAddr, "metrics_addr", cfg.MetricsAddr, "modules", cfg.EnabledModules)
-	return group.Wait()
+	waitErr := group.Wait()
+	if relay != nil {
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer flushCancel()
+		if _, err := relay.RunOnce(flushCtx, 50); err != nil {
+			waitErr = errors.Join(waitErr, fmt.Errorf("flush identity outbox: %w", err))
+		}
+	}
+	return waitErr
 }
 
 func serve(server *http.Server) error {

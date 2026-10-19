@@ -40,7 +40,7 @@ func (fakeService) ListUsers(context.Context, *app.Cursor, int) ([]domain.User, 
 
 func TestRegisterResponseOmitsPasswordHash(t *testing.T) {
 	r := chi.NewRouter()
-	RegisterRoutes(r, fakeService{}, nil)
+	RegisterRoutes(r, fakeService{}, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/users/register",
 		strings.NewReader(`{"email":"a@example.com","password":"correct-password"}`)))
@@ -54,7 +54,7 @@ func TestRegisterResponseOmitsPasswordHash(t *testing.T) {
 
 func TestRegisterConflictMapsTo409(t *testing.T) {
 	r := chi.NewRouter()
-	RegisterRoutes(r, fakeService{registerErr: errors.Join(domain.ErrConflict, errors.New("private database detail"))}, nil)
+	RegisterRoutes(r, fakeService{registerErr: errors.Join(domain.ErrConflict, errors.New("private database detail"))}, nil, nil, nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/v1/users/register",
 		strings.NewReader(`{"email":"a@example.com","password":"correct-password"}`)))

@@ -58,10 +58,10 @@ func NewTxManager(pool *pgxpool.Pool) *TxManager {
 	return &TxManager{pool: pool}
 }
 
-// WithinTx runs fn in one transaction and commits only if fn succeeds.
+// WithinTx runs fn in one transaction and joins an existing transaction in ctx.
 func (m *TxManager) WithinTx(ctx context.Context, fn func(context.Context) error) (err error) {
 	if ctx.Value(txKey{}) != nil {
-		return errors.New("nested transaction is not supported")
+		return fn(ctx)
 	}
 	tx, err := m.pool.Begin(ctx)
 	if err != nil {

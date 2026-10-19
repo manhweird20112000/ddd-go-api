@@ -3,6 +3,7 @@ package identity
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,12 +17,14 @@ import (
 	"github.com/yourorg/go-template/internal/platform/auth"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
+	"github.com/yourorg/go-template/internal/platform/httpx"
 )
 
 // Module owns the identity HTTP service and its selected adapters.
 type Module struct {
-	service  *identityapp.Service
-	verifier *auth.Verifier
+	service     *identityapp.Service
+	verifier    *auth.Verifier
+	idempotency *httpx.Idempotency
 }
 
 // New constructs the identity module from a pool and validated process config.
@@ -34,14 +37,18 @@ func New(pool *pgxpool.Pool, cfg config.Config) (*Module, error) {
 	if err != nil {
 		return nil, fmt.Errorf("identity verifier: %w", err)
 	}
+	idempotency, err := httpx.NewIdempotency(pool, cfg.IdempotencyKey)
+	if err != nil {
+		return nil, fmt.Errorf("identity idempotency key: %w", err)
+	}
 	repository := postgres.New(pool)
 	service := identityapp.NewService(repository, repository, db.NewTxManager(pool), argon2id.New(), issuer, repository)
-	return &Module{service: service, verifier: verifier}, nil
+	return &Module{service: service, verifier: verifier, idempotency: idempotency}, nil
 }
 
 // RegisterRoutes mounts the versioned identity API on router.
-func (m *Module) RegisterRoutes(router chi.Router) {
-	httpadapter.RegisterRoutes(router, m.service, m.verifier)
+func (m *Module) RegisterRoutes(router chi.Router, rateLimit func(http.Handler) http.Handler) {
+	httpadapter.RegisterRoutes(router, m.service, m.verifier, m.idempotency, rateLimit)
 }
 
 // Contract exposes the local identity service to the composition root.

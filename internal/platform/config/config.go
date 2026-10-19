@@ -14,23 +14,27 @@ import (
 
 // Config contains process-level configuration. Never log the complete value.
 type Config struct {
-	HTTPAddr         string        `env:"HTTP_ADDR" envDefault:":8080"`
-	GRPCAddr         string        `env:"GRPC_ADDR" envDefault:":9090"`
-	MetricsAddr      string        `env:"METRICS_ADDR" envDefault:":9100"`
-	DatabaseURL      string        `env:"DATABASE_URL,required"`
-	RedisURL         string        `env:"REDIS_URL"`
-	OTLPEndpoint     string        `env:"OTLP_ENDPOINT"`
-	OTLPInsecure     bool          `env:"OTLP_INSECURE" envDefault:"false"`
-	ServiceName      string        `env:"SERVICE_NAME" envDefault:"go-template"`
-	JWTPrivateKey    string        `env:"JWT_PRIVATE_KEY_BASE64"`
-	JWTIssuer        string        `env:"JWT_ISSUER" envDefault:"go-template"`
-	JWTAudience      string        `env:"JWT_AUDIENCE" envDefault:"go-template-api"`
-	EnabledModules   string        `env:"ENABLED_MODULES" envDefault:"identity,notification"`
-	EventBus         string        `env:"EVENT_BUS" envDefault:"inproc"`
-	NATSURL          string        `env:"NATS_URL"`
-	IdentityGRPCAddr string        `env:"IDENTITY_GRPC_ADDR"`
-	ShutdownTimeout  time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"15s"`
-	ReadyTimeout     time.Duration `env:"READY_TIMEOUT" envDefault:"2s"`
+	HTTPAddr                string        `env:"HTTP_ADDR" envDefault:":8080"`
+	GRPCAddr                string        `env:"GRPC_ADDR" envDefault:":9090"`
+	MetricsAddr             string        `env:"METRICS_ADDR" envDefault:":9100"`
+	DatabaseURL             string        `env:"DATABASE_URL,required"`
+	IdentityDatabaseURL     string        `env:"IDENTITY_DATABASE_URL"`
+	NotificationDatabaseURL string        `env:"NOTIFICATION_DATABASE_URL"`
+	RedisURL                string        `env:"REDIS_URL"`
+	OTLPEndpoint            string        `env:"OTLP_ENDPOINT"`
+	OTLPInsecure            bool          `env:"OTLP_INSECURE" envDefault:"false"`
+	ServiceName             string        `env:"SERVICE_NAME" envDefault:"go-template"`
+	JWTPrivateKey           string        `env:"JWT_PRIVATE_KEY_BASE64"`
+	IdempotencyKey          string        `env:"IDEMPOTENCY_KEY_BASE64"`
+	CORSAllowedOrigins      string        `env:"CORS_ALLOWED_ORIGINS"`
+	JWTIssuer               string        `env:"JWT_ISSUER" envDefault:"go-template"`
+	JWTAudience             string        `env:"JWT_AUDIENCE" envDefault:"go-template-api"`
+	EnabledModules          string        `env:"ENABLED_MODULES" envDefault:"identity,notification"`
+	EventBus                string        `env:"EVENT_BUS" envDefault:"inproc"`
+	NATSURL                 string        `env:"NATS_URL"`
+	IdentityGRPCAddr        string        `env:"IDENTITY_GRPC_ADDR"`
+	ShutdownTimeout         time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"15s"`
+	ReadyTimeout            time.Duration `env:"READY_TIMEOUT" envDefault:"2s"`
 }
 
 // Parse reads a supplied environment map and rejects invalid startup settings.
@@ -52,9 +56,30 @@ func Parse(environment map[string]string) (Config, error) {
 	if err := validateURL("DATABASE_URL", cfg.DatabaseURL, true, "postgres", "postgresql"); err != nil {
 		return Config{}, err
 	}
+	for _, setting := range []struct{ name, value string }{
+		{"IDENTITY_DATABASE_URL", cfg.IdentityDatabaseURL},
+		{"NOTIFICATION_DATABASE_URL", cfg.NotificationDatabaseURL},
+	} {
+		if setting.value != "" {
+			if err := validateURL(setting.name, setting.value, true, "postgres", "postgresql"); err != nil {
+				return Config{}, err
+			}
+		}
+	}
 	if cfg.RedisURL != "" {
 		if err := validateURL("REDIS_URL", cfg.RedisURL, false, "redis", "rediss"); err != nil {
 			return Config{}, err
+		}
+	}
+	for _, origin := range strings.Split(cfg.CORSAllowedOrigins, ",") {
+		if origin == "" {
+			continue
+		}
+		u, err := url.Parse(origin)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") ||
+			u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
+			u.String() != origin {
+			return Config{}, fmt.Errorf("CORS_ALLOWED_ORIGINS must contain exact HTTP origins")
 		}
 	}
 	if cfg.ShutdownTimeout <= 0 || cfg.ReadyTimeout <= 0 {
@@ -92,6 +117,21 @@ func Parse(environment map[string]string) (Config, error) {
 		return Config{}, fmt.Errorf("inproc event bus requires both modules")
 	}
 	return cfg, nil
+}
+
+// ModuleDatabaseURL selects an isolated runtime role, with a local-dev fallback.
+func (c Config) ModuleDatabaseURL(name string) string {
+	switch name {
+	case "identity":
+		if c.IdentityDatabaseURL != "" {
+			return c.IdentityDatabaseURL
+		}
+	case "notification":
+		if c.NotificationDatabaseURL != "" {
+			return c.NotificationDatabaseURL
+		}
+	}
+	return c.DatabaseURL
 }
 
 // HasModule reports whether this process hosts the named module.
