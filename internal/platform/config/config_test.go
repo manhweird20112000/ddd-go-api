@@ -51,3 +51,24 @@ func TestParseRejectsNonnumericPort(t *testing.T) {
 		t.Fatalf("expected HTTP_ADDR port error, got %v", err)
 	}
 }
+
+func TestParseDistributedModuleSelection(t *testing.T) {
+	cfg, err := Parse(map[string]string{
+		"DATABASE_URL":    "postgres://app@localhost:5432/app?sslmode=disable",
+		"ENABLED_MODULES": "notification", "EVENT_BUS": "nats",
+		"NATS_URL": "nats://localhost:4222", "IDENTITY_GRPC_ADDR": "identity:9090",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HasModule("notification") || cfg.HasModule("identity") {
+		t.Fatalf("unexpected module selection: %q", cfg.EnabledModules)
+	}
+	_, err = Parse(map[string]string{
+		"DATABASE_URL":    "postgres://app@localhost:5432/app?sslmode=disable",
+		"ENABLED_MODULES": "notification", "EVENT_BUS": "nats", "NATS_URL": "nats://localhost:4222",
+	})
+	if err == nil || !strings.Contains(err.Error(), "IDENTITY_GRPC_ADDR") {
+		t.Fatalf("expected remote identity address error, got %v", err)
+	}
+}

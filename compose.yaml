@@ -75,5 +75,58 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  nats:
+    profiles: [distributed]
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "127.0.0.1:4222:4222"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  identity-api:
+    profiles: [distributed]
+    image: go-template:dev
+    environment:
+      DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      OTLP_ENDPOINT: otel-collector:4317
+      OTLP_INSECURE: "true"
+      SERVICE_NAME: identity-api
+      JWT_PRIVATE_KEY_BASE64: ${JWT_PRIVATE_KEY_BASE64:?set JWT_PRIVATE_KEY_BASE64 in .env}
+      ENABLED_MODULES: identity
+      EVENT_BUS: nats
+      NATS_URL: nats://nats:4222
+    ports:
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification-worker:
+    profiles: [distributed]
+    image: go-template:dev
+    entrypoint: ["/worker"]
+    environment:
+      DATABASE_URL: postgres://template:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/template?sslmode=disable
+      ENABLED_MODULES: notification
+      EVENT_BUS: nats
+      NATS_URL: nats://nats:4222
+      IDENTITY_GRPC_ADDR: identity-api:9090
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+      identity-api:
+        condition: service_started
+
 volumes:
   postgres_data:

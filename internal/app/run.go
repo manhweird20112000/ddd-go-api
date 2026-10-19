@@ -6,19 +6,25 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	"github.com/yourorg/go-template/internal/modules/identity"
+	grpcadapter "github.com/yourorg/go-template/internal/modules/identity/adapter/grpc"
+	"github.com/yourorg/go-template/internal/modules/identity/contract"
 	"github.com/yourorg/go-template/internal/modules/notification"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
 	"github.com/yourorg/go-template/internal/platform/eventbus"
+	identityv1 "github.com/yourorg/go-template/internal/platform/grpcx/gen/identity/v1"
 	"github.com/yourorg/go-template/internal/platform/httpx"
 	"github.com/yourorg/go-template/internal/platform/metrics"
 	"github.com/yourorg/go-template/internal/platform/outbox"
@@ -34,9 +40,12 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
-	identityModule, err := identity.New(pool, cfg)
-	if err != nil {
-		return err
+	var identityModule *identity.Module
+	if cfg.HasModule("identity") {
+		identityModule, err = identity.New(pool, cfg)
+		if err != nil {
+			return err
+		}
 	}
 
 	var cache *redis.Client
@@ -66,6 +75,47 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return err
 	}
 	defer shutdownTelemetry(logger, cfg.ShutdownTimeout, meterProvider.Shutdown)
+	var localBus *eventbus.InProcess
+	var broker *eventbus.NATS
+	var publisher eventbus.Publisher
+	if cfg.EventBus == "nats" {
+		broker, err = eventbus.NewNATS(startupCtx, cfg.NATSURL, logger)
+		if err != nil {
+			return err
+		}
+		defer broker.Close()
+		publisher = broker
+	} else {
+		localBus = eventbus.NewInProcess()
+		publisher = localBus
+	}
+	var notificationModule *notification.Module
+	if cfg.HasModule("notification") {
+		var localContract contract.Service
+		if identityModule != nil {
+			localContract = identityModule.Contract()
+		}
+		identityService, closer, err := resolveIdentity(startupCtx, cfg, localContract)
+		if err != nil {
+			return err
+		}
+		if closer != nil {
+			defer func() { _ = closer.Close() }()
+		}
+		notificationModule = notification.New(pool, logger, identityService)
+		if localBus != nil {
+			if err := notificationModule.Subscribe(localBus); err != nil {
+				return fmt.Errorf("subscribe notification: %w", err)
+			}
+		}
+	}
+	var relay *outbox.Relay
+	if identityModule != nil {
+		relay, err = outbox.NewRelay(pool, "identity", publisher, logger)
+		if err != nil {
+			return err
+		}
+	}
 
 	readiness := func(ctx context.Context) error {
 		checkCtx, checkCancel := context.WithTimeout(ctx, cfg.ReadyTimeout)
@@ -78,18 +128,17 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 				return fmt.Errorf("redis readiness: %w", err)
 			}
 		}
+		if broker != nil {
+			if err := broker.Ready(checkCtx); err != nil {
+				return fmt.Errorf("NATS readiness: %w", err)
+			}
+		}
 		return nil
 	}
 	propagators := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	router := httpx.NewRouter(readiness, logger)
-	identityModule.RegisterRoutes(router)
-	bus := eventbus.NewInProcess()
-	if err := notification.New(pool, logger, identityModule.Contract()).Subscribe(bus); err != nil {
-		return fmt.Errorf("subscribe notification: %w", err)
-	}
-	relay, err := outbox.NewRelay(pool, "identity", bus, logger)
-	if err != nil {
-		return err
+	if identityModule != nil {
+		identityModule.RegisterRoutes(router)
 	}
 	handler := otelhttp.NewHandler(router, "http.server",
 		otelhttp.WithTracerProvider(traceProvider),
@@ -107,18 +156,57 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second,
 		WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second,
 	}
+	var grpcServer *grpc.Server
+	var grpcListener net.Listener
+	if identityModule != nil {
+		grpcListener, err = net.Listen("tcp", cfg.GRPCAddr)
+		if err != nil {
+			return fmt.Errorf("listen for identity gRPC: %w", err)
+		}
+		grpcServer = grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler(
+			otelgrpc.WithTracerProvider(traceProvider), otelgrpc.WithPropagators(propagators))))
+		identityv1.RegisterIdentityServiceServer(grpcServer, grpcadapter.New(identityModule.Contract()))
+	}
 
 	group, runCtx := errgroup.WithContext(ctx)
-	group.Go(func() error { return relay.Run(runCtx) })
+	if relay != nil {
+		group.Go(func() error { return relay.Run(runCtx) })
+	}
+	if broker != nil && notificationModule != nil {
+		group.Go(func() error { return broker.RunConsumer(runCtx, notificationModule.Handler()) })
+	}
+	if grpcServer != nil {
+		group.Go(func() error {
+			if err := grpcServer.Serve(grpcListener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				return fmt.Errorf("serve identity gRPC: %w", err)
+			}
+			return nil
+		})
+	}
 	group.Go(func() error { return serve(httpServer) })
 	group.Go(func() error { return serve(metricsServer) })
 	group.Go(func() error {
 		<-runCtx.Done()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer shutdownCancel()
-		return errors.Join(httpServer.Shutdown(shutdownCtx), metricsServer.Shutdown(shutdownCtx))
+		httpErr := errors.Join(httpServer.Shutdown(shutdownCtx), metricsServer.Shutdown(shutdownCtx))
+		if grpcServer != nil {
+			stopped := make(chan struct{})
+			go func() {
+				grpcServer.GracefulStop()
+				close(stopped)
+			}()
+			select {
+			case <-stopped:
+			case <-shutdownCtx.Done():
+				grpcServer.Stop()
+				<-stopped
+			}
+		}
+		return httpErr
 	})
-	logger.InfoContext(ctx, "api_started", "http_addr", cfg.HTTPAddr, "metrics_addr", cfg.MetricsAddr)
+	logger.InfoContext(ctx, "api_started", "http_addr", cfg.HTTPAddr,
+		"grpc_addr", cfg.GRPCAddr, "metrics_addr", cfg.MetricsAddr, "modules", cfg.EnabledModules)
 	return group.Wait()
 }
 

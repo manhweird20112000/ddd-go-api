@@ -28,3 +28,6 @@ func New(pool *pgxpool.Pool, logger *slog.Logger, identity contract.Service) *Mo
 func (m *Module) Subscribe(bus *eventbus.InProcess) error {
 	return inproc.Subscribe(bus, m.service)
 }
+
+// Handler returns the same event adapter for a durable broker consumer.
+func (m *Module) Handler() eventbus.Handler { return inproc.Handler(m.service) }

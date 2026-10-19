@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package identity.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/yourorg/go-template/internal/platform/grpcx/gen/identity/v1;identityv1";
+
+service IdentityService {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  string user_id = 1;
+  string email = 2;
+  google.protobuf.Timestamp created_at = 3;
+}

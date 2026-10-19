@@ -21,7 +21,12 @@ type Service interface {
 
 // Subscribe attaches the notification consumer to the local bus.
 func Subscribe(bus *eventbus.InProcess, service Service) error {
-	return bus.Subscribe(contract.UserRegisteredType, func(ctx context.Context, event eventbus.Event) error {
+	return bus.Subscribe(contract.UserRegisteredType, Handler(service))
+}
+
+// Handler adapts a transport envelope to the notification application.
+func Handler(service Service) eventbus.Handler {
+	return func(ctx context.Context, event eventbus.Event) error {
 		if event.Version != 1 {
 			return fmt.Errorf("unsupported registration event version %d", event.Version)
 		}
@@ -35,5 +40,5 @@ func Subscribe(bus *eventbus.InProcess, service Service) error {
 		ctx = httpx.WithRequestID(ctx, event.RequestID)
 		ctx = propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": event.Traceparent})
 		return service.HandleRegistered(ctx, domain.RegisteredUser{EventID: event.ID, UserID: payload.UserID})
-	})
+	}
 }

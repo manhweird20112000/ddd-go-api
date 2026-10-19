@@ -48,9 +48,16 @@
 - `make test-integration` passed. Compose with API and two worker containers processed registration and stored the email obtained through the local Identity contract.
 - `make fmt lint test build` passed on 2026-10-19 with zero lint issues.
 
-## Phases 6–8 — pending
+## Phase 6 — complete
 
-- Phase 6: gRPC, JetStream, registry, and distributed smoke test.
+- Added protobuf/buf generation, Identity gRPC server and contract client, a 2-second default deadline, retries with jitter for idempotent `GetUser`, and a circuit breaker. One contract suite passed for local and gRPC adapters.
+- Added a durable JetStream publisher/consumer with explicit acknowledgements, delayed retries, dead-letter subject, and message-ID deduplication. Composition selects in-process or NATS transport and local or remote Identity contract from environment configuration.
+- `docker compose --profile distributed up --build -d` started Identity API, Notification worker, and NATS. With the old monolith services stopped, a registration on port 8081 produced a published outbox row and a Notification delivery whose recipient matched Identity's email through gRPC. Request and trace IDs matched across HTTP and worker logs.
+- `make fmt lint test build`, `make arch-check`, `buf lint`, and `make proto` passed on 2026-10-19.
+- Compose profiles include unprofiled base services by design; a pure distributed run uses `docker compose --profile distributed up --build -d --scale api=0`.
+
+## Phases 7–8 — pending
+
 - Phase 7: HTTP hardening, separate database roles, and cleanup jobs.
 - Phase 8: scaffolder, complete CI, ADRs, and operational documentation.
 

@@ -6,7 +6,10 @@ import (
 	"log/slog"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/yourorg/go-template/internal/modules/identity"
+	"github.com/yourorg/go-template/internal/modules/identity/contract"
 	"github.com/yourorg/go-template/internal/modules/notification"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
@@ -23,14 +26,51 @@ func RunWorker(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 		return err
 	}
 	defer pool.Close()
-	bus := eventbus.NewInProcess()
-	if err := notification.New(pool, logger, identity.NewLocalContract(pool)).Subscribe(bus); err != nil {
-		return fmt.Errorf("subscribe notification: %w", err)
+	var localBus *eventbus.InProcess
+	var broker *eventbus.NATS
+	var publisher eventbus.Publisher
+	if cfg.EventBus == "nats" {
+		broker, err = eventbus.NewNATS(startupCtx, cfg.NATSURL, logger)
+		if err != nil {
+			return err
+		}
+		defer broker.Close()
+		publisher = broker
+	} else {
+		localBus = eventbus.NewInProcess()
+		publisher = localBus
 	}
-	relay, err := outbox.NewRelay(pool, "identity", bus, logger)
-	if err != nil {
-		return err
+	var notificationModule *notification.Module
+	if cfg.HasModule("notification") {
+		var localContract contract.Service
+		if cfg.HasModule("identity") {
+			localContract = identity.NewLocalContract(pool)
+		}
+		identityService, closer, err := resolveIdentity(startupCtx, cfg, localContract)
+		if err != nil {
+			return err
+		}
+		if closer != nil {
+			defer func() { _ = closer.Close() }()
+		}
+		notificationModule = notification.New(pool, logger, identityService)
+		if localBus != nil {
+			if err := notificationModule.Subscribe(localBus); err != nil {
+				return fmt.Errorf("subscribe notification: %w", err)
+			}
+		}
 	}
-	logger.InfoContext(ctx, "worker_started")
-	return relay.Run(ctx)
+	group, runCtx := errgroup.WithContext(ctx)
+	if cfg.HasModule("identity") {
+		relay, err := outbox.NewRelay(pool, "identity", publisher, logger)
+		if err != nil {
+			return err
+		}
+		group.Go(func() error { return relay.Run(runCtx) })
+	}
+	if broker != nil && notificationModule != nil {
+		group.Go(func() error { return broker.RunConsumer(runCtx, notificationModule.Handler()) })
+	}
+	logger.InfoContext(ctx, "worker_started", "modules", cfg.EnabledModules, "event_bus", cfg.EventBus)
+	return group.Wait()
 }

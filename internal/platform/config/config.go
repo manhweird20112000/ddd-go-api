@@ -14,19 +14,23 @@ import (
 
 // Config contains process-level configuration. Never log the complete value.
 type Config struct {
-	HTTPAddr        string        `env:"HTTP_ADDR" envDefault:":8080"`
-	GRPCAddr        string        `env:"GRPC_ADDR" envDefault:":9090"`
-	MetricsAddr     string        `env:"METRICS_ADDR" envDefault:":9100"`
-	DatabaseURL     string        `env:"DATABASE_URL,required"`
-	RedisURL        string        `env:"REDIS_URL"`
-	OTLPEndpoint    string        `env:"OTLP_ENDPOINT"`
-	OTLPInsecure    bool          `env:"OTLP_INSECURE" envDefault:"false"`
-	ServiceName     string        `env:"SERVICE_NAME" envDefault:"go-template"`
-	JWTPrivateKey   string        `env:"JWT_PRIVATE_KEY_BASE64"`
-	JWTIssuer       string        `env:"JWT_ISSUER" envDefault:"go-template"`
-	JWTAudience     string        `env:"JWT_AUDIENCE" envDefault:"go-template-api"`
-	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"15s"`
-	ReadyTimeout    time.Duration `env:"READY_TIMEOUT" envDefault:"2s"`
+	HTTPAddr         string        `env:"HTTP_ADDR" envDefault:":8080"`
+	GRPCAddr         string        `env:"GRPC_ADDR" envDefault:":9090"`
+	MetricsAddr      string        `env:"METRICS_ADDR" envDefault:":9100"`
+	DatabaseURL      string        `env:"DATABASE_URL,required"`
+	RedisURL         string        `env:"REDIS_URL"`
+	OTLPEndpoint     string        `env:"OTLP_ENDPOINT"`
+	OTLPInsecure     bool          `env:"OTLP_INSECURE" envDefault:"false"`
+	ServiceName      string        `env:"SERVICE_NAME" envDefault:"go-template"`
+	JWTPrivateKey    string        `env:"JWT_PRIVATE_KEY_BASE64"`
+	JWTIssuer        string        `env:"JWT_ISSUER" envDefault:"go-template"`
+	JWTAudience      string        `env:"JWT_AUDIENCE" envDefault:"go-template-api"`
+	EnabledModules   string        `env:"ENABLED_MODULES" envDefault:"identity,notification"`
+	EventBus         string        `env:"EVENT_BUS" envDefault:"inproc"`
+	NATSURL          string        `env:"NATS_URL"`
+	IdentityGRPCAddr string        `env:"IDENTITY_GRPC_ADDR"`
+	ShutdownTimeout  time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"15s"`
+	ReadyTimeout     time.Duration `env:"READY_TIMEOUT" envDefault:"2s"`
 }
 
 // Parse reads a supplied environment map and rejects invalid startup settings.
@@ -64,7 +68,40 @@ func Parse(environment map[string]string) (Config, error) {
 			return Config{}, err
 		}
 	}
+	modules := make(map[string]bool)
+	for _, name := range strings.Split(cfg.EnabledModules, ",") {
+		if (name != "identity" && name != "notification") || modules[name] {
+			return Config{}, fmt.Errorf("ENABLED_MODULES must list identity and/or notification once")
+		}
+		modules[name] = true
+	}
+	if cfg.EventBus != "inproc" && cfg.EventBus != "nats" {
+		return Config{}, fmt.Errorf("EVENT_BUS must be inproc or nats")
+	}
+	if cfg.EventBus == "nats" {
+		if err := validateURL("NATS_URL", cfg.NATSURL, false, "nats", "tls"); err != nil {
+			return Config{}, err
+		}
+	}
+	if cfg.HasModule("notification") && !cfg.HasModule("identity") {
+		if err := validateAddress("IDENTITY_GRPC_ADDR", cfg.IdentityGRPCAddr); err != nil {
+			return Config{}, err
+		}
+	}
+	if cfg.EventBus == "inproc" && len(modules) != 2 {
+		return Config{}, fmt.Errorf("inproc event bus requires both modules")
+	}
 	return cfg, nil
+}
+
+// HasModule reports whether this process hosts the named module.
+func (c Config) HasModule(name string) bool {
+	for _, enabled := range strings.Split(c.EnabledModules, ",") {
+		if enabled == name {
+			return true
+		}
+	}
+	return false
 }
 
 func validateAddress(name, addr string) error {
