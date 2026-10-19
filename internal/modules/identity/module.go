@@ -9,8 +9,10 @@ import (
 
 	"github.com/yourorg/go-template/internal/modules/identity/adapter/argon2id"
 	httpadapter "github.com/yourorg/go-template/internal/modules/identity/adapter/http"
+	"github.com/yourorg/go-template/internal/modules/identity/adapter/inproc"
 	"github.com/yourorg/go-template/internal/modules/identity/adapter/postgres"
 	identityapp "github.com/yourorg/go-template/internal/modules/identity/app"
+	"github.com/yourorg/go-template/internal/modules/identity/contract"
 	"github.com/yourorg/go-template/internal/platform/auth"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
@@ -40,4 +42,14 @@ func New(pool *pgxpool.Pool, cfg config.Config) (*Module, error) {
 // RegisterRoutes mounts the versioned identity API on router.
 func (m *Module) RegisterRoutes(router chi.Router) {
 	httpadapter.RegisterRoutes(router, m.service, m.verifier)
+}
+
+// Contract exposes the local identity service to the composition root.
+func (m *Module) Contract() contract.Service {
+	return inproc.New(m.service)
+}
+
+// NewLocalContract exposes identity reads to a worker without signing credentials.
+func NewLocalContract(pool *pgxpool.Pool) contract.Service {
+	return inproc.New(identityapp.NewQueries(postgres.New(pool)))
 }

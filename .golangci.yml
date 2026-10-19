@@ -21,3 +21,51 @@ linters:
             - go.opentelemetry.io
             - golang.org
             - google.golang.org
+        notification_boundary:
+          files:
+            - "**/internal/modules/notification/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com
+            - golang.org
+            - go.opentelemetry.io
+            - google.golang.org
+            - github.com/yourorg/go-template/internal/modules/identity/contract
+            - github.com/yourorg/go-template/internal/modules/notification
+            - github.com/yourorg/go-template/internal/platform
+          deny:
+            - pkg: github.com/yourorg/go-template/internal/modules/identity
+              desc: notification may import only identity/contract
+        identity_boundary:
+          files:
+            - "**/internal/modules/identity/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com
+            - golang.org
+            - go.opentelemetry.io
+            - google.golang.org
+            - github.com/yourorg/go-template/internal/modules/identity
+            - github.com/yourorg/go-template/internal/platform
+          deny:
+            - pkg: github.com/yourorg/go-template/internal/modules/notification
+              desc: identity may not import notification
+        platform_boundary:
+          files:
+            - "**/internal/platform/**/*.go"
+            - "!$test"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com
+            - golang.org
+            - go.opentelemetry.io
+            - google.golang.org
+            - github.com/yourorg/go-template/internal/platform
+          deny:
+            - pkg: github.com/yourorg/go-template/internal/modules
+              desc: platform may not import business modules

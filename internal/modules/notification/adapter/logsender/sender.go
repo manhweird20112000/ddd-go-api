@@ -17,8 +17,8 @@ type Sender struct{ logger *slog.Logger }
 func New(logger *slog.Logger) *Sender { return &Sender{logger: logger} }
 
 // SendWelcome records delivery without exposing an email address in logs.
-func (s *Sender) SendWelcome(ctx context.Context, recipient string) error {
-	s.logger.InfoContext(ctx, "welcome_sent", "recipient_id", recipient,
+func (s *Sender) SendWelcome(ctx context.Context, _ string) error {
+	s.logger.InfoContext(ctx, "welcome_sent",
 		"request_id", httpx.RequestID(ctx),
 		"trace_id", trace.SpanContextFromContext(ctx).TraceID().String())
 	return nil

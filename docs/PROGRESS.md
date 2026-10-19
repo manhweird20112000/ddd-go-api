@@ -40,9 +40,16 @@
 - `make test-integration` passed with duplicate delivery and two concurrent relays. Compose with two worker containers processed a registration, then the same event was forced to redeliver; its outbox returned to `published` and only one processed marker and welcome row existed.
 - `make fmt lint test build` passed on 2026-10-19 with zero lint issues.
 
-## Phases 5–8 — pending
+## Phase 5 — complete
 
-- Phase 5: identity contract, in-process adapter, and architecture enforcement.
+- Identity now exposes `contract.Service.GetUser` through an in-process adapter. Notification resolves the email by ID through a consumer-owned lookup port and stores it as delivery recipient; event payload remains `user_id` only.
+- Added `go/packages` architecture tests for cross-module contract imports, stdlib-only domains, application infrastructure isolation, and platform independence. Depguard has module-specific rules.
+- Deliberately imported `identity/domain` from Notification during validation: both `make arch-check` and `make lint` failed, then passed after removing the probe.
+- `make test-integration` passed. Compose with API and two worker containers processed registration and stored the email obtained through the local Identity contract.
+- `make fmt lint test build` passed on 2026-10-19 with zero lint issues.
+
+## Phases 6–8 — pending
+
 - Phase 6: gRPC, JetStream, registry, and distributed smoke test.
 - Phase 7: HTTP hardening, separate database roles, and cleanup jobs.
 - Phase 8: scaffolder, complete CI, ADRs, and operational documentation.

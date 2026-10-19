@@ -37,17 +37,25 @@ func (s *fakeSender) SendWelcome(context.Context, string) error {
 	return nil
 }
 
+type fakeUsers struct{ calls int }
+
+func (u *fakeUsers) Email(context.Context, string) (string, error) {
+	u.calls++
+	return "recipient@example.test", nil
+}
+
 func TestHandleRegisteredOnce(t *testing.T) {
 	repo := &fakeRepo{}
 	sender := &fakeSender{}
-	service := NewService(repo, fakeTx{}, sender)
+	users := &fakeUsers{}
+	service := NewService(repo, fakeTx{}, sender, users)
 	event := domain.RegisteredUser{EventID: "event-1", UserID: "user-1"}
 	for range 2 {
 		if err := service.HandleRegistered(context.Background(), event); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if sender.calls != 1 || repo.welcomes != 1 {
+	if sender.calls != 1 || repo.welcomes != 1 || users.calls != 1 {
 		t.Fatalf("expected one welcome, got sends=%d rows=%d", sender.calls, repo.welcomes)
 	}
 	if err := service.HandleRegistered(context.Background(), domain.RegisteredUser{}); !errors.Is(err, domain.ErrInvalidEvent) {

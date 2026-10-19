@@ -6,6 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/yourorg/go-template/internal/modules/identity/contract"
 	"github.com/yourorg/go-template/internal/modules/notification/adapter/inproc"
 	"github.com/yourorg/go-template/internal/modules/notification/adapter/logsender"
 	"github.com/yourorg/go-template/internal/modules/notification/adapter/postgres"
@@ -18,8 +19,9 @@ import (
 type Module struct{ service *app.Service }
 
 // New constructs notification over its database pool.
-func New(pool *pgxpool.Pool, logger *slog.Logger) *Module {
-	return &Module{service: app.NewService(postgres.New(pool), db.NewTxManager(pool), logsender.New(logger))}
+func New(pool *pgxpool.Pool, logger *slog.Logger, identity contract.Service) *Module {
+	return &Module{service: app.NewService(postgres.New(pool), db.NewTxManager(pool),
+		logsender.New(logger), inproc.NewLookup(identity))}
 }
 
 // Subscribe registers the module's in-process event consumer.

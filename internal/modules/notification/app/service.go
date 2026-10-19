@@ -26,16 +26,22 @@ type Sender interface {
 	SendWelcome(context.Context, string) error
 }
 
+// UserLookup resolves a referenced user without importing identity internals.
+type UserLookup interface {
+	Email(context.Context, string) (string, error)
+}
+
 // Service consumes registration events with an idempotent database effect.
 type Service struct {
 	repo   Repository
 	tx     UnitOfWork
 	sender Sender
+	users  UserLookup
 }
 
 // NewService connects the notification use case to its adapters.
-func NewService(repo Repository, tx UnitOfWork, sender Sender) *Service {
-	return &Service{repo: repo, tx: tx, sender: sender}
+func NewService(repo Repository, tx UnitOfWork, sender Sender, users UserLookup) *Service {
+	return &Service{repo: repo, tx: tx, sender: sender, users: users}
 }
 
 // HandleRegistered records and sends one welcome for each source event.
@@ -48,10 +54,17 @@ func (s *Service) HandleRegistered(ctx context.Context, event domain.RegisteredU
 		if err != nil || !fresh {
 			return err
 		}
-		if err := s.sender.SendWelcome(txCtx, event.UserID); err != nil {
+		email, err := s.users.Email(txCtx, event.UserID)
+		if err != nil {
+			return fmt.Errorf("resolve welcome recipient: %w", err)
+		}
+		if email == "" {
+			return fmt.Errorf("empty welcome recipient: %w", domain.ErrInvalidEvent)
+		}
+		if err := s.sender.SendWelcome(txCtx, email); err != nil {
 			return fmt.Errorf("send welcome: %w", err)
 		}
-		if err := s.repo.SaveWelcome(txCtx, event.EventID, event.UserID, event.UserID); err != nil {
+		if err := s.repo.SaveWelcome(txCtx, event.EventID, event.UserID, email); err != nil {
 			return fmt.Errorf("save welcome delivery: %w", err)
 		}
 		return nil

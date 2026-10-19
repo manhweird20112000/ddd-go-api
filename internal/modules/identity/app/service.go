@@ -185,6 +185,11 @@ func (s *Service) Refresh(ctx context.Context, raw string) (TokenPair, error) {
 
 // Me returns the user identified by a verified access token.
 func (s *Service) Me(ctx context.Context, userID string) (domain.User, error) {
+	return s.GetUser(ctx, userID)
+}
+
+// GetUser queries a user for identity's public service contract.
+func (s *Service) GetUser(ctx context.Context, userID string) (domain.User, error) {
 	user, err := s.users.ByID(ctx, userID)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("get current user: %w", err)

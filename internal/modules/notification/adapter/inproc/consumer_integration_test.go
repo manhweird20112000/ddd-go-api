@@ -25,6 +25,12 @@ import (
 	"github.com/yourorg/go-template/internal/platform/outbox"
 )
 
+type fakeIdentity struct{}
+
+func (fakeIdentity) GetUser(_ context.Context, userID string) (contract.User, error) {
+	return contract.User{ID: userID, Email: "welcome@example.test"}, nil
+}
+
 func TestDuplicateEventsAndConcurrentWorkers(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -45,7 +51,7 @@ func TestDuplicateEventsAndConcurrentWorkers(t *testing.T) {
 	t.Cleanup(pool.Close)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	bus := eventbus.NewInProcess()
-	require.NoError(t, notification.New(pool, logger).Subscribe(bus))
+	require.NoError(t, notification.New(pool, logger, fakeIdentity{}).Subscribe(bus))
 
 	userID := uuid.NewString()
 	payload, err := json.Marshal(contract.UserRegisteredV1{UserID: userID})
@@ -59,6 +65,9 @@ func TestDuplicateEventsAndConcurrentWorkers(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, "SELECT count(*) FROM notification.processed_events").Scan(&processed))
 	require.Equal(t, 1, deliveries)
 	require.Equal(t, 1, processed)
+	var recipient string
+	require.NoError(t, pool.QueryRow(ctx, "SELECT recipient FROM notification.welcome_deliveries WHERE event_id = $1", event.ID).Scan(&recipient))
+	require.Equal(t, "welcome@example.test", recipient)
 
 	for range 20 {
 		id := uuid.New()

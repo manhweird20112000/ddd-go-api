@@ -84,7 +84,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	router := httpx.NewRouter(readiness, logger)
 	identityModule.RegisterRoutes(router)
 	bus := eventbus.NewInProcess()
-	if err := notification.New(pool, logger).Subscribe(bus); err != nil {
+	if err := notification.New(pool, logger, identityModule.Contract()).Subscribe(bus); err != nil {
 		return fmt.Errorf("subscribe notification: %w", err)
 	}
 	relay, err := outbox.NewRelay(pool, "identity", bus, logger)

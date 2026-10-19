@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/yourorg/go-template/internal/modules/identity"
 	"github.com/yourorg/go-template/internal/modules/notification"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/db"
@@ -23,7 +24,7 @@ func RunWorker(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 	}
 	defer pool.Close()
 	bus := eventbus.NewInProcess()
-	if err := notification.New(pool, logger).Subscribe(bus); err != nil {
+	if err := notification.New(pool, logger, identity.NewLocalContract(pool)).Subscribe(bus); err != nil {
 		return fmt.Errorf("subscribe notification: %w", err)
 	}
 	relay, err := outbox.NewRelay(pool, "identity", bus, logger)

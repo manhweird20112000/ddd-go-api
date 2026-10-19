@@ -45,7 +45,7 @@ proto:
 	buf generate api/proto
 
 arch-check:
-	go test ./internal/archtest
+	go test -count=1 ./internal/archtest
 
 up:
 	docker compose up --build -d
