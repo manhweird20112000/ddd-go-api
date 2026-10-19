@@ -1,7 +1,10 @@
-.PHONY: help fmt lint test test-integration test-race build run worker migrate-up migrate-down sqlc proto arch-check up down new-module
+.PHONY: help fmt lint test test-integration test-race coverage vulncheck build run worker migrate-up migrate-down sqlc proto arch-check up down new-module dev-env
 
 help:
-	@echo "Targets: fmt lint test test-integration test-race build run worker migrate-up migrate-down sqlc proto arch-check up down new-module"
+	@echo "Targets: fmt lint test test-integration test-race coverage vulncheck build run worker migrate-up migrate-down sqlc proto arch-check up down new-module dev-env"
+
+dev-env:
+	go run ./tools/devenv
 
 fmt:
 	go fmt ./...
@@ -15,9 +18,15 @@ test:
 test-integration:
 	go test -tags=integration ./...
 
+coverage:
+	go run ./tools/coverage
+
+vulncheck:
+	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
 test-race:
 ifeq ($(OS),Windows_NT)
-	docker run --rm -v "$(CURDIR):/src" -w /src golang:1.26 sh -c "go test -race ./..."
+	docker run --rm -v "$(CURDIR):/src" -w /src golang:1.26.9 sh -c "go test -race ./..."
 else
 	go test -race ./...
 endif
@@ -38,8 +47,7 @@ migrate-down:
 	go run ./cmd/migrate down
 
 sqlc:
-	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate -f internal/modules/identity/sqlc.yaml
-	go run github.com/sqlc-dev/sqlc/cmd/sqlc@latest generate -f internal/modules/notification/sqlc.yaml
+	go run ./tools/sqlc
 
 proto:
 	buf generate api/proto

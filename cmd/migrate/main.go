@@ -7,8 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	identitymigrations "github.com/yourorg/go-template/internal/modules/identity/migrations"
-	notificationmigrations "github.com/yourorg/go-template/internal/modules/notification/migrations"
+	"github.com/yourorg/go-template/internal/app/registry"
 	"github.com/yourorg/go-template/internal/platform/config"
 	"github.com/yourorg/go-template/internal/platform/logging"
 )
@@ -26,19 +25,15 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	steps := []struct {
-		name string
-		run  func(context.Context, string, string) error
-	}{
-		{"identity", identitymigrations.Run},
-		{"notification", notificationmigrations.Run},
-	}
+	steps := registry.All()
 	if os.Args[1] == "down" {
-		steps[0], steps[1] = steps[1], steps[0]
+		for left, right := 0, len(steps)-1; left < right; left, right = left+1, right-1 {
+			steps[left], steps[right] = steps[right], steps[left]
+		}
 	}
 	for _, step := range steps {
-		if err := step.run(ctx, cfg.DatabaseURL, os.Args[1]); err != nil {
-			logger.Error("migration failed", "module", step.name, slog.Any("error", err))
+		if err := step.Migrate(ctx, cfg.DatabaseURL, os.Args[1]); err != nil {
+			logger.Error("migration failed", "module", step.Name, slog.Any("error", err))
 			os.Exit(1)
 		}
 	}

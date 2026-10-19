@@ -72,3 +72,27 @@ func TestParseDistributedModuleSelection(t *testing.T) {
 		t.Fatalf("expected remote identity address error, got %v", err)
 	}
 }
+
+func TestParseGeneratedModuleDatabaseURL(t *testing.T) {
+	const admin = "postgres://admin@localhost:5432/app?sslmode=disable"
+	const billing = "postgres://billing_app@localhost:5432/app?sslmode=disable"
+	cfg, err := Parse(map[string]string{
+		"DATABASE_URL": admin, "ENABLED_MODULES": "billing", "BILLING_DATABASE_URL": billing,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.HasModule("billing") || cfg.ModuleDatabaseURL("billing") != billing || len(cfg.ModuleNames()) != 1 {
+		t.Fatalf("generated module config is incorrect: %+v", cfg.ModuleNames())
+	}
+	_, err = Parse(map[string]string{"DATABASE_URL": admin, "ENABLED_MODULES": "Billing"})
+	if err == nil {
+		t.Fatal("expected invalid module name")
+	}
+	_, err = Parse(map[string]string{
+		"DATABASE_URL": admin, "ENABLED_MODULES": "billing", "BILLING_DATABASE_URL": "not-a-url",
+	})
+	if err == nil {
+		t.Fatal("expected invalid module database URL")
+	}
+}

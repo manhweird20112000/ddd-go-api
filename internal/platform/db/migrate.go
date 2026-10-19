@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"regexp"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -16,7 +17,7 @@ import (
 
 // RunMigrations applies a module's embedded migrations under its own schema.
 func RunMigrations(ctx context.Context, databaseURL, schema, direction string, files fs.FS) (err error) {
-	if schema != "identity" && schema != "notification" {
+	if !regexp.MustCompile(`^[a-z][a-z0-9_]*$`).MatchString(schema) {
 		return fmt.Errorf("unsupported migration schema %q", schema)
 	}
 	database, err := sql.Open("pgx", databaseURL)

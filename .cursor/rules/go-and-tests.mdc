@@ -1,0 +1,7 @@
+---
+description: Go implementation and test conventions
+globs: "**/*.go"
+alwaysApply: true
+---
+
+Use clear, small interfaces at the consumer, explicit errors with context, context-aware I/O, and minimal abstractions. Add meaningful domain and application tests with hand-written fakes; module domain and app statement coverage must each reach 80% when they contain executable code. Use Testcontainers for PostgreSQL and Redis integration behavior. Run `make fmt lint test build` and `make coverage`; run `make test-integration` for persistence or transport changes. Never log credentials, tokens, or PII.

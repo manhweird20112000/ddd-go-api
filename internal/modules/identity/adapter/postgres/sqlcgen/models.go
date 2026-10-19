@@ -8,6 +8,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type IdentityIdempotencyKey struct {
+	Scope       string
+	Key         string
+	RequestHmac []byte
+	StatusCode  pgtype.Int4
+	ContentType string
+	Nonce       []byte
+	Ciphertext  []byte
+	ExpiresAt   pgtype.Timestamptz
+	CreatedAt   pgtype.Timestamptz
+}
+
 type IdentityOutbox struct {
 	ID            pgtype.UUID
 	EventType     string

@@ -16,6 +16,7 @@ linters:
             - $all
           allow:
             - $gostd
+            - go/format
             - github.com/yourorg/go-template
             - github.com
             - go.opentelemetry.io

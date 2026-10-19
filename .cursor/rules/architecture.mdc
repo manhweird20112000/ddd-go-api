@@ -1,0 +1,7 @@
+---
+description: Module boundaries and persistence ownership
+globs: internal/**/*.go
+alwaysApply: true
+---
+
+Module `domain` uses only the standard library. Module `app` defines its ports and cannot import adapters, drivers, HTTP, gRPC, or platform packages. Other modules import only `contract`. `internal/platform` imports no business module. Each schema and runtime database role belongs to one module. Never create cross-schema joins or foreign keys. Publish a durable outbox event in the same transaction as its business write; consume events with an idempotent marker in the same transaction as the effect. Run `make arch-check` after boundary changes.

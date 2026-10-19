@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/yourorg/go-template/internal/app/registry"
 	"github.com/yourorg/go-template/internal/modules/identity"
 	"github.com/yourorg/go-template/internal/modules/identity/contract"
 	"github.com/yourorg/go-template/internal/modules/notification"
@@ -21,6 +22,11 @@ import (
 
 // RunWorker relays committed events until its context is canceled.
 func RunWorker(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	for _, name := range cfg.ModuleNames() {
+		if _, found := registry.Lookup(name); !found {
+			return fmt.Errorf("unregistered module %q", name)
+		}
+	}
 	startupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var identityPool, notificationPool *pgxpool.Pool

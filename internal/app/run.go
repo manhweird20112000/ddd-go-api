@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"github.com/yourorg/go-template/internal/app/registry"
 	"github.com/yourorg/go-template/internal/modules/identity"
 	grpcadapter "github.com/yourorg/go-template/internal/modules/identity/adapter/grpc"
 	"github.com/yourorg/go-template/internal/modules/identity/contract"
@@ -51,6 +52,24 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			return fmt.Errorf("open notification database: %w", err)
 		}
 		defer notificationPool.Close()
+	}
+	extraPools := make(map[string]*pgxpool.Pool)
+	extraModules := make(map[string]registry.HTTPModule)
+	for _, name := range cfg.ModuleNames() {
+		entry, found := registry.Lookup(name)
+		if !found {
+			return fmt.Errorf("unregistered module %q", name)
+		}
+		if entry.New == nil {
+			continue
+		}
+		modulePool, err := db.Open(startupCtx, cfg.ModuleDatabaseURL(name))
+		if err != nil {
+			return fmt.Errorf("open %s database: %w", name, err)
+		}
+		defer modulePool.Close()
+		extraPools[name] = modulePool
+		extraModules[name] = entry.New(modulePool)
 	}
 	var identityModule *identity.Module
 	if cfg.HasModule("identity") {
@@ -142,6 +161,11 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 				}
 			}
 		}
+		for name, pool := range extraPools {
+			if err := pool.Ping(checkCtx); err != nil {
+				return fmt.Errorf("%s database readiness: %w", name, err)
+			}
+		}
 		if cache != nil {
 			if err := cache.Ping(checkCtx).Err(); err != nil {
 				return fmt.Errorf("redis readiness: %w", err)
@@ -158,6 +182,11 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	router := httpx.NewRouter(readiness, logger)
 	if identityModule != nil {
 		identityModule.RegisterRoutes(router, httpx.RateLimit(cache, 20))
+	}
+	for _, name := range cfg.ModuleNames() {
+		if module := extraModules[name]; module != nil {
+			module.RegisterRoutes(router)
+		}
 	}
 	handler := otelhttp.NewHandler(httpx.Security(cfg.CORSAllowedOrigins)(router), "http.server",
 		otelhttp.WithTracerProvider(traceProvider),

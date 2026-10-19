@@ -64,9 +64,14 @@
 - Bounded hourly cleanup removes expired idempotency keys, published outbox rows after 45 days, dead outbox rows after 90 days, and processed event markers after 45 days. JetStream retains events for 30 days. Shutdown drains servers and consumers before a final relay flush.
 - `make fmt lint test build` and `make test-integration` passed on 2026-10-19 with zero lint issues. Distributed Compose returned 201 for registration and identical replay, 409 for a changed payload, and 429 after 20 login requests. Monolith Compose registration produced one Notification delivery.
 
-## Phase 8 — pending
+## Phase 8 — complete
 
-- Scaffolder, complete CI, ADRs, and operational documentation.
+- Added `make new-module name=billing`: it generated a domain, application service and test, contract, HTTP/PostgreSQL adapters, migration, sqlc config, and registry entry. The generated module passed `make fmt lint test build arch-check`; after a migration its HTTP status endpoint returned 200. The temporary module and schema were removed after validation.
+- CI now checks format, lint, race, integration, architecture, per-package domain/application coverage, govulncheck, Buf lint and PR breaking, generated code, Go build, and Docker build. `actionlint` accepted the workflow.
+- Added `make dev-env`, `make coverage`, and `make vulncheck`; repository `AGENTS.md`, Cursor rules, ADRs 0002–0005, extraction checklist, and README. `make dev-env` generated valid random secrets in an isolated probe and refused no existing user file.
+- Phase 8 security scan found reachable Go standard library vulnerabilities with Go 1.26.3. The module and Docker build now require [Go 1.26.9](https://go.dev/doc/devel/release#go1.26.9), which fixes the reported issues. This supersedes the Phase 0 toolchain choice. Govulncheck under Go 1.26.9 reported zero reachable vulnerabilities; one dependency advisory was reported as unreachable.
+- Final `make fmt lint test build`, `make test-race`, `make test-integration`, `make arch-check`, `make coverage`, `make vulncheck`, `make sqlc proto`, Buf lint/breaking, and Docker build passed. Identity app coverage is 91.4%, Identity domain 100%, Notification app 100%. Notification domain has no executable statements.
+- Final monolith Compose smoke: readiness 200, registration 201, one Notification delivery. Final distributed Compose smoke: readiness 200, one published outbox event, and one delivery with the email resolved through gRPC.
 
 ## Environment findings
 

@@ -35,7 +35,7 @@ The default `cmd/api` process runs HTTP, the outbox relay, and consumers. `cmd/w
 
 ## Data ownership
 
-`identity.users` stores normalized email, password hash, and timestamps. `identity.refresh_tokens` stores only token hashes and rotation state. `notification.welcome_deliveries` records one database effect per source event. Each module owns `outbox`, `processed_events`, and `schema_migrations` tables. Modules with HTTP writes own durable idempotency records. No cross-module foreign keys or joins are permitted.
+`identity.users` stores normalized email, password hash, and timestamps. `identity.refresh_tokens` stores only token hashes and rotation state. `notification.welcome_deliveries` records one database effect per source event. Identity owns `outbox` and `idempotency_keys`; Notification owns `outbox` and `processed_events`. Both have their own `schema_migrations` table. No cross-module foreign keys or joins are permitted.
 
 The relay claims rows with `FOR UPDATE SKIP LOCKED`, publishes, and marks them delivered. This prevents concurrent claims, but a crash between publish and commit can publish again. Consumers insert `(event_id, consumer)` into `processed_events` in the same transaction as their database effect. The Sender's external side effect remains at least once unless the destination supplies its own idempotency key.
 
@@ -56,7 +56,7 @@ HTTP errors use `{"error":{"code","message","request_id"}}`. Authenticated user 
 
 ## Decisions
 
-- Go 1.26.3 is the installed stable toolchain; select the latest dependencies compatible with it and commit resolved module versions for reproducible builds.
+- Go 1.26.9 is the patched 1.26 toolchain required by the vulnerability gate; it supersedes the 1.26.3 toolchain originally installed at Phase 0.
 - Root `compose.yaml` supports direct `docker compose up` acceptance.
 - Phase 4 logs welcome delivery by user ID; Phase 5 adds the synchronous identity contract lookup for email while keeping the event payload unchanged.
 - Phase 0 used design approval instead of a Makefile gate because the repository had no Makefile before Phase 1.

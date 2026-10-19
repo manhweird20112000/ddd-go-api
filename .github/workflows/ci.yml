@@ -3,11 +3,16 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   platform:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -20,5 +25,32 @@ jobs:
         run: make lint
       - name: Test
         run: make test-race
+      - name: Integration
+        run: make test-integration
+      - name: Architecture
+        run: make arch-check
+      - name: Domain and application coverage
+        run: make coverage
+      - name: Vulnerabilities
+        run: make vulncheck
+      - uses: bufbuild/buf-setup-action@v1.50.0
+      - name: Buf lint
+        run: buf lint api/proto
+      - name: Buf breaking against PR base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git cat-file -e "${BASE_SHA}:api/proto/buf.yaml"; then
+            buf breaking api/proto --against ".git#ref=${BASE_SHA},subdir=api/proto"
+          else
+            echo "No protobuf baseline in the PR base commit"
+          fi
+      - name: Generated code
+        run: |
+          make sqlc proto
+          git diff --exit-code
       - name: Build
         run: make build
+      - name: Container build
+        run: docker build -f deploy/Dockerfile -t go-template:ci .
