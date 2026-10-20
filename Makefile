@@ -1,7 +1,7 @@
-.PHONY: help fmt lint test test-integration test-race coverage vulncheck build run worker migrate-up migrate-down sqlc proto arch-check up down new-module dev-env
+.PHONY: help fmt lint test test-integration test-race coverage vulncheck build run worker migrate-up migrate-down sqlc proto arch-check up down up-distributed down-distributed docker-build logs new-module dev-env
 
 help:
-	@echo "Targets: fmt lint test test-integration test-race coverage vulncheck build run worker migrate-up migrate-down sqlc proto arch-check up down new-module dev-env"
+	@echo "Targets: fmt lint test test-integration test-race coverage vulncheck build run worker migrate-up migrate-down sqlc proto arch-check up down up-distributed down-distributed docker-build logs new-module dev-env"
 
 dev-env:
 	go run ./tools/devenv
@@ -60,6 +60,18 @@ up:
 
 down:
 	docker compose down
+
+up-distributed:
+	docker compose --profile distributed up --build -d --scale api=0
+
+down-distributed:
+	docker compose --profile distributed down
+
+docker-build:
+	docker compose build migrate
+
+logs:
+	docker compose logs --tail=100 -f $(service)
 
 new-module:
 	go run ./tools/newmodule -name $(name)
